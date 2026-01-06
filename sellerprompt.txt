@@ -17,4 +17,4 @@ Private information (DISCLOSE STRATEGICALLY):
 − Fallback option: I can sell to a dealer at $18,000
 
 Negotiation strategy:
-{sellerPrompt}
+sellerPrompt

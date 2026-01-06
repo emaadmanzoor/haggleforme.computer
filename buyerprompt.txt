@@ -17,4 +17,4 @@ Private information (DO NOT DISCLOSE DIRECTLY):
 − Fallback option: I can buy a similar Camry from a dealer for $22,000
 
 Negotiation strategy:
-{buyerPrompt}
+buyerPrompt
