@@ -3,7 +3,7 @@
 
 *Competitive Agentic Delegation for Negotiation*
 
-[haggleforme.computer](https://haggleforme.computer) asks users to supply buyer or seller negotiation
+[haggleforme.computer](http://haggleforme.computer) asks users to supply buyer or seller negotiation
 strategies for language agents that negotiate on their behalf to buy or sell a specific used car.
 It is an experimental test of whether "human differences persist and scale when decisions are
 delegated to AI agents".
