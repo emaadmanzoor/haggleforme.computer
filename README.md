@@ -1,5 +1,14 @@
 # Haggle For Me, Computer
-<img src="https://stoppingagents.com/images/logo-transparent.png" height="200" align="right"/>
+<pre align="right">
+   _________
+  /  ____  \\
+ |  |    |  |
+ |  |____|  |
+ |  __  __  |
+ | |  ||  | |
+ | |__||__| |
+  \\________/
+</pre>
 
 *Competitive Agentic Delegation for Negotiation*
 
