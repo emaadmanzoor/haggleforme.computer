@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+logs/
+*.log
+.DS_Store
+
+# Vite / Node
+website/node_modules/
+website/dist/
+website/.env
+website/.env.*
+
+# Backend runtime data
+website/backend/*.json
