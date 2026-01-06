@@ -1,5 +1,6 @@
 # Haggle For Me, Computer
-<pre align="right">
+<div align="right" style="float:right; margin-left:16px">
+  <pre>
    _________
   /  ____  \\
  |  |    |  |
@@ -8,7 +9,8 @@
  | |  ||  | |
  | |__||__| |
   \\________/
-</pre>
+  </pre>
+</div>
 
 *Competitive Agentic Delegation for Negotiation*
 
