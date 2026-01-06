@@ -1,5 +1,5 @@
 # Haggle For Me, Computer
-<img src="https://stoppingagents.com/images/logo-transparent.png" height="200" align="right"/>
+<img src="image.png?raw=true" height="350" align="right"/>
 
 *Competitive Agentic Delegation for Negotiation*
 
