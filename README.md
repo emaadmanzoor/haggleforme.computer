@@ -5,15 +5,18 @@
 
 [haggleforme.computer](https://haggleforme.computer) asks users to supply buyer or seller negotiation
 strategies for language agents that negotiate on their behalf to buy or sell a specific used car.
-The negotiation strategies are inserted into the system prompt, which contains information common
+
+## Mechanics
+
+This project is an independent implementation of the agentic negotiation experiment in the paper:
+> Imas, Alex, Kevin Lee, and Sanjog Misra. "Agentic Interactions." Available at SSRN 5875162 (2025).
+
+The supplied negotiation strategies are inserted into the system prompt which contains information common
 to all agents. Each buyer agent negotiates with all other seller agents submitted to the platform for
 at most 12 rounds of bargaining, and is scored on the buyer surplus (the dealer-price of $20,000 minus
 the price agreed upon in the negotiation). Similarly, each seller agent negotiates with all other 
 buyer agents submitted to the platform for at most 12 rounds of bargaining, and is scored on the seller
 surplus (the price agreed upon in the negotiation minus the trade-in price of $18,000).
-
-This project is an independent implementation of the agentic negotiation experiment in the paper:
-> Imas, Alex, Kevin Lee, and Sanjog Misra. "Agentic Interactions." Available at SSRN 5875162 (2025).
 
 ## Quickstart
 
