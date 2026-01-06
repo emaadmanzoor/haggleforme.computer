@@ -5,11 +5,13 @@
 
 [haggleforme.computer](https://haggleforme.computer) asks users to supply buyer or seller negotiation
 strategies for language agents that negotiate on their behalf to buy or sell a specific used car.
-
-## Mechanics
+It is an experimental test of whether "human differences persist and scale when decisions are
+delegated to AI agents".
 
 This project is an independent implementation of the agentic negotiation experiment in the paper:
 > Imas, Alex, Kevin Lee, and Sanjog Misra. "Agentic Interactions." Available at SSRN 5875162 (2025).
+
+## Mechanics
 
 The supplied negotiation strategies are inserted into the system prompt which contains information common
 to all agents. Each buyer agent negotiates with all other seller agents submitted to the platform for
