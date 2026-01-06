@@ -9,8 +9,13 @@ logs/
 # Vite / Node
 website/node_modules/
 website/dist/
+website/.eslintcache
+website/.vscode/
 website/.env
 website/.env.*
+website/.vercel
 
 # Backend runtime data
 website/backend/*.json
+website/backend/users.json
+website/backend/interactions.json
