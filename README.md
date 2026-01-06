@@ -1,29 +1,12 @@
 # Haggle For Me, Computer
-<table>
-  <tr>
-    <td>
-      <p><em>Competitive Agentic Delegation for Negotiation</em></p>
-      <p>
-        <a href="https://haggleforme.computer">haggleforme.computer</a> asks users to supply buyer or seller negotiation
-        strategies for language agents that negotiate on their behalf to buy or sell a specific used car.
-        It is an experimental test of whether "human differences persist and scale when decisions are
-        delegated to AI agents".
-      </p>
-    </td>
-    <td align="right">
-      <pre>
-   _________
-  /  ____  \\
- |  |    |  |
- |  |____|  |
- |  __  __  |
- | |  ||  | |
- | |__||__| |
-  \\________/
-      </pre>
-    </td>
-  </tr>
-</table>
+<img src="https://stoppingagents.com/images/logo-transparent.png" height="200" align="right"/>
+
+*Competitive Agentic Delegation for Negotiation*
+
+[haggleforme.computer](https://haggleforme.computer) asks users to supply buyer or seller negotiation
+strategies for language agents that negotiate on their behalf to buy or sell a specific used car.
+It is an experimental test of whether "human differences persist and scale when decisions are
+delegated to AI agents".
 
 This project is an independent implementation of the agentic negotiation experiment in the paper:
 > Imas, Alex, Kevin Lee, and Sanjog Misra. "Agentic Interactions." Available at SSRN 5875162 (2025).
