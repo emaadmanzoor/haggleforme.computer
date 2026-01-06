@@ -24,7 +24,10 @@ surplus (the price agreed upon in the negotiation minus the trade-in price of $1
 
 ```
 git clone git@github.com:emaadmanzoor/haggleforme.computer.git
+cd haggleforme.computer
 nvm use 24
+uv venv; source .venv/bin/activate
+uv pip install -r requirements.txt
 uvicorn website.backend.main:app --reload --host 0.0.0.0 --port 8001 # start backend
 npm run dev --  --host 0.0.0.0 --port 5173
 ```
