@@ -453,10 +453,38 @@ def _validate_username_or_raise(username: str) -> str:
     return cleaned
 
 
-async def _chat_complete(
-    messages: List[Dict[str, str]],
+def _response_text(resp: Any) -> str:
+    if hasattr(resp, "output_text"):
+        text = resp.output_text
+        if isinstance(text, str) and text:
+            return text
+    if hasattr(resp, "output"):
+        parts: List[str] = []
+        for item in resp.output:
+            if getattr(item, "type", None) == "message":
+                for content in getattr(item, "content", []):
+                    if getattr(content, "type", None) in ("output_text", "text"):
+                        parts.append(getattr(content, "text", ""))
+        if parts:
+            return "".join(parts)
+    return str(resp)
+
+
+async def _create_conversation(system_prompt: str) -> str:
+    response = await openai_client.conversations.create(
+        items=[{"type": "message", "role": "system", "content": system_prompt}]
+    )
+    conversation_id = getattr(response, "id", None)
+    if not conversation_id:
+        raise RuntimeError("OpenAI conversation id missing from response.")
+    return conversation_id
+
+
+async def _conversation_complete(
+    user_message: str,
     model: str,
     *,
+    conversation_id: str,
     temperature: float = 0.7,
     response_format: Optional[Dict[str, str]] = None,
 ) -> str:
@@ -469,16 +497,17 @@ async def _chat_complete(
             if wait_time > 0:
                 await asyncio.sleep(wait_time)
             _LAST_MODEL_CALL = loop.time()
-        params = {
+        params: Dict[str, Any] = {
             "model": model,
-            "messages": messages,
+            "input": [{"role": "user", "content": user_message}],
             "temperature": temperature,
         }
         if response_format:
             params["response_format"] = response_format
-        response = await openai_client.chat.completions.create(**params)
-        content = response.choices[0].message.content
-        return content.strip() if isinstance(content, str) else ""
+        params["conversation"] = conversation_id
+        response = await openai_client.responses.create(**params)
+        content = _response_text(response).strip()
+        return content
 
 
 def extract_acceptance_price(text: str) -> Optional[float]:
@@ -522,17 +551,15 @@ async def run_negotiation(
     max_rounds: int,
     start_message: str,
 ) -> List[Dict[str, Any]]:
-    buyer_history = [
-        {"role": "system", "content": buyer_prompt},
-        {"role": "user", "content": start_message},
-    ]
-    seller_history = [
-        {"role": "system", "content": seller_prompt},
-    ]
     rounds: List[Dict[str, Any]] = []
+    buyer_conversation = await _create_conversation(buyer_prompt)
+    seller_conversation = await _create_conversation(seller_prompt)
 
-    buyer_reply = await _chat_complete(buyer_history, model)
-    buyer_history.append({"role": "assistant", "content": buyer_reply})
+    buyer_reply = await _conversation_complete(
+        start_message,
+        model,
+        conversation_id=buyer_conversation,
+    )
     rounds.append(
         {
             "round": 1,
@@ -549,14 +576,18 @@ async def run_negotiation(
     for round_idx in range(2, max_rounds + 1):
         if round_idx % 2 == 0:
             speaker = "Seller"
-            seller_history.append({"role": "user", "content": last_message})
-            reply = await _chat_complete(seller_history, model)
-            seller_history.append({"role": "assistant", "content": reply})
+            reply = await _conversation_complete(
+                last_message,
+                model,
+                conversation_id=seller_conversation,
+            )
         else:
             speaker = "Buyer"
-            buyer_history.append({"role": "user", "content": last_message})
-            reply = await _chat_complete(buyer_history, model)
-            buyer_history.append({"role": "assistant", "content": reply})
+            reply = await _conversation_complete(
+                last_message,
+                model,
+                conversation_id=buyer_conversation,
+            )
 
         rounds.append(
             {
