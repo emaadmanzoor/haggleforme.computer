@@ -311,6 +311,11 @@ async def _load_strategies() -> List[Dict[str, Any]]:
 def _ensure_default_strategies(records: List[Dict[str, Any]]) -> tuple[bool, List[Dict[str, Any]]]:
     updated = False
     existing_ids = {str(item.get("entry_id", "")) for item in records if isinstance(item, dict)}
+    existing_user_roles = {
+        (str(item.get("username", "")), str(item.get("role", "")))
+        for item in records
+        if isinstance(item, dict) and isinstance(item.get("username"), str)
+    }
     for item in records:
         if not isinstance(item, dict):
             continue
@@ -344,7 +349,7 @@ def _ensure_default_strategies(records: List[Dict[str, Any]]) -> tuple[bool, Lis
                 item["registered"] = True
                 updated = True
     # Do not seed anonymous default strategies into the pool.
-    if "seed-buyer-emaad" not in existing_ids:
+    if "seed-buyer-emaad" not in existing_ids and ("Emaad", "buyer") not in existing_user_roles:
         records.append(
             {
                 "entry_id": "seed-buyer-emaad",
@@ -356,7 +361,7 @@ def _ensure_default_strategies(records: List[Dict[str, Any]]) -> tuple[bool, Lis
             }
         )
         updated = True
-    if "seed-seller-emaad" not in existing_ids:
+    if "seed-seller-emaad" not in existing_ids and ("Emaad", "seller") not in existing_user_roles:
         records.append(
             {
                 "entry_id": "seed-seller-emaad",
@@ -368,7 +373,7 @@ def _ensure_default_strategies(records: List[Dict[str, Any]]) -> tuple[bool, Lis
             }
         )
         updated = True
-    if "seed-buyer-alex" not in existing_ids:
+    if "seed-buyer-alex" not in existing_ids and ("Alex", "buyer") not in existing_user_roles:
         records.append(
             {
                 "entry_id": "seed-buyer-alex",
@@ -380,7 +385,7 @@ def _ensure_default_strategies(records: List[Dict[str, Any]]) -> tuple[bool, Lis
             }
         )
         updated = True
-    if "seed-seller-alex" not in existing_ids:
+    if "seed-seller-alex" not in existing_ids and ("Alex", "seller") not in existing_user_roles:
         records.append(
             {
                 "entry_id": "seed-seller-alex",
@@ -604,6 +609,11 @@ class StrategyRequest(BaseModel):
     strategy: str = Field(..., min_length=1, max_length=4000)
 
 
+class StrategySnapshot(BaseModel):
+    buyer_strategy: Optional[str] = None
+    seller_strategy: Optional[str] = None
+
+
 class MatchRound(BaseModel):
     round: int
     speaker: str
@@ -709,6 +719,36 @@ async def logout_user(request: Request):
     return JSONResponse({"status": "ok"})
 
 
+@app.get("/api/strategies/me", response_model=StrategySnapshot)
+async def get_my_strategies(request: Request) -> StrategySnapshot:
+    token = _extract_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing auth token.")
+    username = active_tokens.get(token)
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid auth token.")
+    strategies = await _load_strategies()
+    buyer_strategy: Optional[str] = None
+    seller_strategy: Optional[str] = None
+    buyer_time = -1
+    seller_time = -1
+    for item in strategies:
+        if item.get("username") != username:
+            continue
+        role = item.get("role")
+        created_at = int(item.get("created_at", 0))
+        strategy = item.get("strategy")
+        if not isinstance(strategy, str):
+            continue
+        if role == "buyer" and created_at >= buyer_time:
+            buyer_time = created_at
+            buyer_strategy = strategy
+        if role == "seller" and created_at >= seller_time:
+            seller_time = created_at
+            seller_strategy = strategy
+    return StrategySnapshot(buyer_strategy=buyer_strategy, seller_strategy=seller_strategy)
+
+
 @app.post("/api/submit", response_model=SubmissionResponse)
 async def submit_strategy(payload: StrategyRequest, request: Request) -> SubmissionResponse:
     role = payload.role.strip().lower()
@@ -741,6 +781,15 @@ async def submit_strategy(payload: StrategyRequest, request: Request) -> Submiss
     async with _STRATEGIES_LOCK:
         strategies = await _load_strategies()
         defaults_added, strategies = _ensure_default_strategies(strategies)
+        if registered and username:
+            strategies = [
+                item
+                for item in strategies
+                if not (
+                    item.get("username") == username
+                    and item.get("role") == role
+                )
+            ]
         strategies.append(entry)
         strategies = [
             item

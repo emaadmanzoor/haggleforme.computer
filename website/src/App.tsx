@@ -147,6 +147,13 @@ function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(false);
   const [authReady, setAuthReady] = useState<boolean>(false);
+  const [strategiesOpen, setStrategiesOpen] = useState<boolean>(false);
+  const [strategiesLoading, setStrategiesLoading] = useState<boolean>(false);
+  const [strategiesError, setStrategiesError] = useState<string | null>(null);
+  const [userStrategies, setUserStrategies] = useState<{
+    buyer_strategy?: string | null;
+    seller_strategy?: string | null;
+  } | null>(null);
 
   const isSignedIn = useMemo(() => Boolean(authToken && authUser), [authToken, authUser]);
 
@@ -183,6 +190,33 @@ function App() {
     setAuthError(null);
     resetAuthForm();
     setAuthMode(mode);
+  };
+
+  const loadUserStrategies = async () => {
+    if (!authToken) {
+      return;
+    }
+    setStrategiesLoading(true);
+    setStrategiesError(null);
+    try {
+      const response = await fetch(apiUrl("/api/strategies/me"), {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const detail =
+          typeof payload.detail === "string" ? payload.detail : "Unable to load strategies.";
+        throw new Error(detail);
+      }
+      setUserStrategies({
+        buyer_strategy: payload.buyer_strategy ?? null,
+        seller_strategy: payload.seller_strategy ?? null,
+      });
+    } catch (error) {
+      setStrategiesError((error as Error).message);
+    } finally {
+      setStrategiesLoading(false);
+    }
   };
 
   const loadLeaderboard = async () => {
@@ -342,6 +376,8 @@ function App() {
       }
     }
     clearStoredAuth();
+    setUserStrategies(null);
+    setStrategiesOpen(false);
     loadLeaderboard();
   };
 
@@ -415,7 +451,20 @@ function App() {
             <div className="auth-controls">
               {isSignedIn ? (
                 <>
-                  <span className="auth-user">signed in as {authUser}</span>
+                  <span className="auth-user">
+                    signed in as {authUser} (
+                    <button
+                      type="button"
+                      className="auth-link"
+                      onClick={() => {
+                        setStrategiesOpen(true);
+                        loadUserStrategies();
+                      }}
+                    >
+                      view my strategies
+                    </button>
+                    )
+                  </span>
                   <button className="auth-button" type="button" onClick={handleLogout}>
                     Sign out
                   </button>
@@ -476,7 +525,7 @@ function App() {
                   </button>
                   <div className="command-actions">
                     <button className="text-button primary" type="submit" disabled={formDisabled}>
-                      {isSubmitting ? "Submitting…" : "Submit"}
+                      {isSubmitting ? "Running tournaments…" : "Submit"}
                     </button>
                   </div>
                 </div>
@@ -521,6 +570,47 @@ function App() {
           </div>
         </div>
       </div>
+
+      {strategiesOpen && (
+        <div className="prompt-modal-overlay" role="dialog" aria-modal="true">
+          <div className="prompt-modal">
+            <div className="prompt-modal-body">
+              <div className="modal-header-row">
+                <button
+                  type="button"
+                  className="text-button prompt-close"
+                  onClick={() => setStrategiesOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+              <div className="result-grid strategies-grid">
+                <div>
+                  <span className="result-label">Buyer strategy</span>
+                  <span className="strategy-value">
+                    {strategiesLoading
+                      ? "Loading…"
+                      : userStrategies?.buyer_strategy || "No strategy submitted"}
+                  </span>
+                </div>
+                <div>
+                  <span className="result-label">Seller strategy</span>
+                  <span className="strategy-value">
+                    {strategiesLoading
+                      ? "Loading…"
+                      : userStrategies?.seller_strategy || "No strategy submitted"}
+                  </span>
+                </div>
+              </div>
+              {strategiesError && (
+                <div className="auth-error" role="alert" aria-live="polite">
+                  {strategiesError}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {authMode && (
         <div className="auth-overlay" role="dialog" aria-modal="true">
