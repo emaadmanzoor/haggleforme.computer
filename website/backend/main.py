@@ -101,6 +101,8 @@ _USERS_LOCK = asyncio.Lock()
 _LEADERBOARD_LOCK = asyncio.Lock()
 _STRATEGIES_LOCK = asyncio.Lock()
 _MATCHES_LOCK = asyncio.Lock()
+_SUBMISSIONS_LOCK = asyncio.Lock()
+_SUBMISSIONS: Dict[str, Dict[str, Any]] = {}
 
 active_tokens: Dict[str, str] = {}
 
@@ -647,6 +649,8 @@ class SubmissionResponse(BaseModel):
     matches: List[MatchResult] = Field(default_factory=list)
     transcript: List[MatchRound] = Field(default_factory=list)
     leaderboard: List[Dict[str, Any]] = Field(default_factory=list)
+    total_tournaments: Optional[int] = None
+    completed_tournaments: Optional[int] = None
     message: Optional[str] = None
 
 
@@ -749,6 +753,121 @@ async def get_my_strategies(request: Request) -> StrategySnapshot:
     return StrategySnapshot(buyer_strategy=buyer_strategy, seller_strategy=seller_strategy)
 
 
+
+async def _run_submission(
+    *,
+    entry_id: str,
+    entry: Dict[str, Any],
+    opponents: List[Dict[str, Any]],
+    role: str,
+    leaderboard_snapshot: List[Dict[str, Any]],
+    user_total_surplus: Optional[float],
+) -> None:
+    matches_payload: List[MatchResult] = []
+    total_surplus = 0.0
+    completed = 0
+
+    for opponent in opponents:
+        buyer_entry = entry if role == "buyer" else opponent
+        seller_entry = entry if role == "seller" else opponent
+
+        buyer_prompt = _build_prompt(BUYER_TEMPLATE, "buyerPrompt", buyer_entry["strategy"])
+        seller_prompt = _build_prompt(SELLER_TEMPLATE, "sellerPrompt", seller_entry["strategy"])
+
+        try:
+            rounds = await run_negotiation(
+                buyer_prompt=buyer_prompt,
+                seller_prompt=seller_prompt,
+                model=NEGOTIATION_MODEL,
+                max_rounds=MAX_ROUNDS,
+                start_message=DEFAULT_START_MESSAGE,
+            )
+        except Exception as exc:
+            async with _SUBMISSIONS_LOCK:
+                record = _SUBMISSIONS.get(entry_id)
+                if record:
+                    record["status"] = "error"
+                    record["message"] = f"Negotiation model call failed: {exc}"
+            return
+
+        agreement, price = outcome_from_rounds(rounds)
+
+        buyer_surplus = 0.0
+        seller_surplus = 0.0
+        if agreement and price is not None:
+            buyer_surplus = 22000 - price
+            seller_surplus = price - 18000
+
+        match_record = {
+            "match_id": uuid.uuid4().hex,
+            "created_at": int(time.time()),
+            "buyer_entry": buyer_entry["entry_id"],
+            "seller_entry": seller_entry["entry_id"],
+            "buyer_username": buyer_entry.get("username"),
+            "seller_username": seller_entry.get("username"),
+            "agreement": agreement,
+            "price": price,
+            "rounds": len(rounds),
+            "buyer_surplus": buyer_surplus,
+            "seller_surplus": seller_surplus,
+            "transcript": rounds,
+        }
+
+        async with _MATCHES_LOCK:
+            matches = await _load_matches()
+            matches.append(match_record)
+            await _save_matches(matches)
+
+        if buyer_entry.get("registered") and buyer_entry.get("username"):
+            leaderboard_snapshot = await _update_leaderboard(
+                buyer_entry["username"],
+                surplus=buyer_surplus,
+                agreement=agreement,
+            )
+        if seller_entry.get("registered") and seller_entry.get("username"):
+            leaderboard_snapshot = await _update_leaderboard(
+                seller_entry["username"],
+                surplus=seller_surplus,
+                agreement=agreement,
+            )
+
+        if buyer_entry.get("username") == entry.get("username"):
+            total_surplus += buyer_surplus
+        if seller_entry.get("username") == entry.get("username"):
+            total_surplus += seller_surplus
+
+        matches_payload.append(
+            MatchResult(
+                opponent_role=seller_entry.get("role") if role == "buyer" else buyer_entry.get("role"),
+                opponent_label=opponent.get("username") or "Anonymous",
+                agreement=agreement,
+                price=price,
+                rounds=len(rounds),
+                surplus=buyer_surplus if role == "buyer" else seller_surplus,
+                opponent_surplus=seller_surplus if role == "buyer" else buyer_surplus,
+                transcript=[
+                    MatchRound(round=r["round"], speaker=r["speaker"], text=r["text"])
+                    for r in rounds
+                ],
+            )
+        )
+
+        completed += 1
+        async with _SUBMISSIONS_LOCK:
+            record = _SUBMISSIONS.get(entry_id)
+            if record:
+                record["completed_tournaments"] = completed
+                record["matches"] = matches_payload
+                record["total_surplus"] = total_surplus
+                record["leaderboard"] = leaderboard_snapshot
+                record["user_total_surplus"] = user_total_surplus
+
+    async with _SUBMISSIONS_LOCK:
+        record = _SUBMISSIONS.get(entry_id)
+        if record:
+            record["status"] = "matched"
+
+
 @app.post("/api/submit", response_model=SubmissionResponse)
 async def submit_strategy(payload: StrategyRequest, request: Request) -> SubmissionResponse:
     role = payload.role.strip().lower()
@@ -827,101 +946,61 @@ async def submit_strategy(payload: StrategyRequest, request: Request) -> Submiss
             message="Waiting for an opponent strategy to join the pool.",
         )
 
-    matches_payload: List[MatchResult] = []
-    total_surplus = 0.0
-
-    for opponent in opponents:
-        buyer_entry = entry if role == "buyer" else opponent
-        seller_entry = entry if role == "seller" else opponent
-
-        buyer_prompt = _build_prompt(BUYER_TEMPLATE, "buyerPrompt", buyer_entry["strategy"])
-        seller_prompt = _build_prompt(SELLER_TEMPLATE, "sellerPrompt", seller_entry["strategy"])
-
-        try:
-            rounds = await run_negotiation(
-                buyer_prompt=buyer_prompt,
-                seller_prompt=seller_prompt,
-                model=NEGOTIATION_MODEL,
-                max_rounds=MAX_ROUNDS,
-                start_message=DEFAULT_START_MESSAGE,
-            )
-        except Exception as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Negotiation model call failed: {exc}",
-            ) from exc
-
-        agreement, price = outcome_from_rounds(rounds)
-
-        buyer_surplus = 0.0
-        seller_surplus = 0.0
-        if agreement and price is not None:
-            buyer_surplus = 22000 - price
-            seller_surplus = price - 18000
-
-        match_record = {
-            "match_id": uuid.uuid4().hex,
-            "created_at": int(time.time()),
-            "buyer_entry": buyer_entry["entry_id"],
-            "seller_entry": seller_entry["entry_id"],
-            "buyer_username": buyer_entry.get("username"),
-            "seller_username": seller_entry.get("username"),
-            "agreement": agreement,
-            "price": price,
-            "rounds": len(rounds),
-            "buyer_surplus": buyer_surplus,
-            "seller_surplus": seller_surplus,
-            "transcript": rounds,
+    total_tournaments = len(opponents)
+    async with _SUBMISSIONS_LOCK:
+        _SUBMISSIONS[entry_id] = {
+            "status": "running",
+            "entry_id": entry_id,
+            "role": role,
+            "matches": [],
+            "leaderboard": leaderboard_snapshot,
+            "user_total_surplus": user_total_surplus,
+            "total_tournaments": total_tournaments,
+            "completed_tournaments": 0,
         }
 
-        async with _MATCHES_LOCK:
-            matches = await _load_matches()
-            matches.append(match_record)
-            await _save_matches(matches)
-
-        if buyer_entry.get("registered") and buyer_entry.get("username"):
-            leaderboard_snapshot = await _update_leaderboard(
-                buyer_entry["username"], surplus=buyer_surplus, agreement=agreement
-            )
-        if seller_entry.get("registered") and seller_entry.get("username"):
-            leaderboard_snapshot = await _update_leaderboard(
-                seller_entry["username"], surplus=seller_surplus, agreement=agreement
-            )
-
-        opponent_label = opponent.get("username") or "Anonymous"
-        user_surplus = buyer_surplus if role == "buyer" else seller_surplus
-        opponent_surplus = seller_surplus if role == "buyer" else buyer_surplus
-        if agreement:
-            total_surplus += user_surplus
-
-        matches_payload.append(
-            MatchResult(
-                opponent_role=opponent.get("role"),
-                opponent_label=opponent_label,
-                agreement=agreement,
-                price=price,
-                rounds=len(rounds),
-                surplus=user_surplus,
-                opponent_surplus=opponent_surplus,
-                transcript=[
-                    MatchRound(**{k: r[k] for k in ("round", "speaker", "text")})
-                    for r in rounds
-                ],
-            )
+    asyncio.create_task(
+        _run_submission(
+            entry_id=entry_id,
+            entry=entry,
+            opponents=opponents,
+            role=role,
+            leaderboard_snapshot=leaderboard_snapshot,
+            user_total_surplus=user_total_surplus,
         )
-
-    user_total_surplus = await _get_user_total_surplus(username) if username else None
-
-    return SubmissionResponse(
-        status="matched",
-        entry_id=entry_id,
-        role=role,
-        user_total_surplus=user_total_surplus,
-        total_surplus=total_surplus,
-        matches=matches_payload,
-        leaderboard=leaderboard_snapshot,
     )
 
+    return SubmissionResponse(
+        status="running",
+        entry_id=entry_id,
+        role=role,
+        leaderboard=leaderboard_snapshot,
+        user_total_surplus=user_total_surplus,
+        total_tournaments=total_tournaments,
+        completed_tournaments=0,
+    )
+
+
+
+
+@app.get("/api/submit/status/{entry_id}", response_model=SubmissionResponse)
+async def get_submission_status(entry_id: str) -> SubmissionResponse:
+    async with _SUBMISSIONS_LOCK:
+        record = _SUBMISSIONS.get(entry_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Submission not found.")
+        return SubmissionResponse(
+            status=record.get("status", "running"),
+            entry_id=record.get("entry_id", entry_id),
+            role=record.get("role", "buyer"),
+            matches=record.get("matches", []),
+            leaderboard=record.get("leaderboard", []),
+            user_total_surplus=record.get("user_total_surplus"),
+            total_surplus=record.get("total_surplus"),
+            total_tournaments=record.get("total_tournaments"),
+            completed_tournaments=record.get("completed_tournaments"),
+            message=record.get("message"),
+        )
 
 @app.get("/api/leaderboard")
 async def get_leaderboard():

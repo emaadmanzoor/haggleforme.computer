@@ -28,7 +28,7 @@ type MatchResult = {
 };
 
 type SubmissionResponse = {
-  status: "matched" | "queued";
+  status: "matched" | "queued" | "running" | "error";
   entry_id: string;
   role: Role;
   opponent_role?: Role;
@@ -43,6 +43,8 @@ type SubmissionResponse = {
   matches?: MatchResult[];
   transcript?: MatchRound[];
   leaderboard?: LeaderboardEntry[];
+  total_tournaments?: number;
+  completed_tournaments?: number;
   message?: string;
 };
 
@@ -147,6 +149,9 @@ function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(false);
   const [authReady, setAuthReady] = useState<boolean>(false);
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
+  const [tournamentTotal, setTournamentTotal] = useState<number>(0);
+  const [tournamentCompleted, setTournamentCompleted] = useState<number>(0);
   const [strategiesOpen, setStrategiesOpen] = useState<boolean>(false);
   const [strategiesLoading, setStrategiesLoading] = useState<boolean>(false);
   const [strategiesError, setStrategiesError] = useState<string | null>(null);
@@ -259,6 +264,54 @@ function App() {
   }, [authReady]);
 
   useEffect(() => {
+    if (!submissionId) {
+      return;
+    }
+
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(apiUrl(`/api/submit/status/${submissionId}`));
+        if (!response.ok) {
+          return;
+        }
+        const payload = await response.json().catch(() => ({}));
+        if (cancelled) {
+          return;
+        }
+        if (typeof payload.total_tournaments === "number") {
+          setTournamentTotal(payload.total_tournaments);
+        }
+        if (typeof payload.completed_tournaments === "number") {
+          setTournamentCompleted(payload.completed_tournaments);
+        }
+        if (payload.status === "matched") {
+          setResult(payload as SubmissionResponse);
+          setResultOpen(true);
+          if (Array.isArray(payload.leaderboard)) {
+            setLeaderboard(normalizeLeaderboard(payload.leaderboard));
+          }
+          setIsSubmitting(false);
+          setSubmissionId(null);
+        } else if (payload.status === "error") {
+          const detail =
+            typeof payload.message === "string" ? payload.message : "Submission failed.";
+          setErrorMessage(detail);
+          setIsSubmitting(false);
+          setSubmissionId(null);
+        }
+      } catch (err) {
+        console.warn("Unable to poll submission", err);
+      }
+    }, 1000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [submissionId]);
+
+  useEffect(() => {
     const loadPrompts = async () => {
       try {
         const response = await fetch(apiUrl("/api/prompts"));
@@ -290,6 +343,11 @@ function App() {
     setIsSubmitting(true);
     setErrorMessage(null);
     setResult(null);
+    setSubmissionId(null);
+    setTournamentCompleted(0);
+    setTournamentTotal(0);
+
+    let keepSubmitting = false;
 
     try {
       const headers: HeadersInit = { "Content-Type": "application/json" };
@@ -316,15 +374,31 @@ function App() {
         throw new Error(detail);
       }
 
-      setResult(payload as SubmissionResponse);
+      const submission = payload as SubmissionResponse;
+      if (submission.status === "running") {
+        keepSubmitting = true;
+        setSubmissionId(submission.entry_id);
+        if (typeof submission.total_tournaments === "number") {
+          setTournamentTotal(submission.total_tournaments);
+        }
+        if (typeof submission.completed_tournaments === "number") {
+          setTournamentCompleted(submission.completed_tournaments);
+        }
+        if (Array.isArray(submission.leaderboard)) {
+          setLeaderboard(normalizeLeaderboard(submission.leaderboard));
+        }
+        return;
+      }
+
+      setResult(submission);
       setResultOpen(true);
-      if (Array.isArray(payload.leaderboard)) {
-        setLeaderboard(normalizeLeaderboard(payload.leaderboard));
+      if (Array.isArray(submission.leaderboard)) {
+        setLeaderboard(normalizeLeaderboard(submission.leaderboard));
       }
     } catch (error) {
       setErrorMessage((error as Error).message);
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(keepSubmitting);
     }
   };
 
@@ -378,10 +452,23 @@ function App() {
     clearStoredAuth();
     setUserStrategies(null);
     setStrategiesOpen(false);
+    setSubmissionId(null);
+    setTournamentCompleted(0);
+    setTournamentTotal(0);
+    setIsSubmitting(false);
     loadLeaderboard();
   };
 
   const formDisabled = isSubmitting || strategy.trim().length === 0;
+  const currentTournament =
+    tournamentTotal > 0
+      ? Math.min(tournamentCompleted + 1, tournamentTotal)
+      : 0;
+  const submitLabel = isSubmitting
+    ? tournamentTotal > 0
+      ? `Running tournaments ${currentTournament} / ${tournamentTotal}…`
+      : "Running tournaments…"
+    : "Submit";
   const roleHint = role === "buyer" ? "buyer" : "seller";
   const matches = useMemo<MatchResult[]>(() => {
     if (!result) {
@@ -525,7 +612,7 @@ function App() {
                   </button>
                   <div className="command-actions">
                     <button className="text-button primary" type="submit" disabled={formDisabled}>
-                      {isSubmitting ? "Running tournaments…" : "Submit"}
+                      {submitLabel}
                     </button>
                   </div>
                 </div>
@@ -554,13 +641,11 @@ function App() {
                 <div className="leaderboard-list">
                   <div className="leaderboard-row header">
                     <span>Player</span>
-                    <span>Matches</span>
-                    <span>Total</span>
+                    <span>Total surplus</span>
                   </div>
                   {leaderboard.map((entry) => (
                     <div key={entry.username} className="leaderboard-row">
                       <span className="player-name">{entry.username}</span>
-                      <span>{entry.matches}</span>
                       <span>{formatCurrency(entry.total_surplus)}</span>
                     </div>
                   ))}
