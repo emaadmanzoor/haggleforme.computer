@@ -437,10 +437,14 @@ def _extract_token(request: Request) -> Optional[str]:
 
 
 def _decode_client_hash(value: str) -> bytes:
-    try:
-        return bytes.fromhex(value)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid password hash.") from exc
+    cleaned = value.strip()
+    if re.fullmatch(r"[0-9a-fA-F]{64}", cleaned):
+        try:
+            return bytes.fromhex(cleaned)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid password hash.") from exc
+    # Fallback: accept raw passwords when the client can't hash (e.g., insecure context).
+    return hashlib.sha256(cleaned.encode("utf-8")).digest()
 
 
 def _validate_username_or_raise(username: str) -> str:
@@ -607,7 +611,7 @@ async def run_negotiation(
 
 class AuthRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=32)
-    password_hash: str = Field(..., min_length=32, max_length=256)
+    password_hash: str = Field(..., min_length=1, max_length=256)
 
 
 class AuthResponse(BaseModel):

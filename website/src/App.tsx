@@ -58,7 +58,7 @@ const API_BASE = (() => {
   if (typeof window !== "undefined") {
     return "";
   }
-  return "http://haggleforme.computer";
+  return "https://haggleforme.computer";
 })();
 
 const apiUrl = (path: string) => `${API_BASE}${path}`;
@@ -547,10 +547,14 @@ function App() {
             </label>
             {authError && <div className="auth-error">{authError}</div>}
             <div className="auth-actions">
-              <button type="button" onClick={closeAuthOverlay}>
+              <button type="button" className="text-button" onClick={closeAuthOverlay}>
                 Cancel
               </button>
-              <button type="submit" className="primary" disabled={authLoading}>
+              <button
+                type="submit"
+                className="text-button primary"
+                disabled={authLoading}
+              >
                 {authLoading ? "Working…" : authMode === "signin" ? "Sign in" : "Register"}
               </button>
             </div>
