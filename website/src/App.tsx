@@ -496,7 +496,7 @@ function App() {
             </div>
 
             <div className="terminal-column narrow">
-              <p className="terminal-block">Leaderboard</p>
+              <p className="terminal-block">Leaderboard Top 10</p>
               {leaderboard.length === 0 ? (
                 <p className="terminal-block terminal-empty">
                   No ranked users yet. Register to appear here.
@@ -529,6 +529,7 @@ function App() {
             <label>
               Username
               <input
+                className={authError ? "error" : ""}
                 value={authFormUsername}
                 onChange={(event) => setAuthFormUsername(event.target.value)}
                 autoComplete="username"
@@ -539,13 +540,18 @@ function App() {
               Password
               <input
                 type="password"
+                className={authError ? "error" : ""}
                 value={authFormPassword}
                 onChange={(event) => setAuthFormPassword(event.target.value)}
                 autoComplete={authMode === "signin" ? "current-password" : "new-password"}
                 required
               />
             </label>
-            {authError && <div className="auth-error">{authError}</div>}
+            {authError && (
+              <div className="auth-error" role="alert" aria-live="polite">
+                {authError}
+              </div>
+            )}
             <div className="auth-actions">
               <button type="button" className="text-button" onClick={closeAuthOverlay}>
                 Cancel

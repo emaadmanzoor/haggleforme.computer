@@ -226,6 +226,19 @@ async def _update_leaderboard(username: str, *, surplus: float, agreement: bool)
 
 async def _get_leaderboard() -> List[LeaderboardEntry]:
     records = await _load_leaderboard()
+    users = await _load_users()
+    for user in users.values():
+        username = str(user.get("username", "")).strip()
+        if not username:
+            continue
+        key = username.lower()
+        if key not in records:
+            records[key] = {
+                "username": username,
+                "matches": 0,
+                "agreements": 0,
+                "total_surplus": 0.0,
+            }
     return _sorted_leaderboard(records)
 
 
@@ -245,8 +258,6 @@ def _sorted_leaderboard(records: Dict[str, LeaderboardRecord]) -> List[Leaderboa
         matches = int(raw.get("matches", 0))
         agreements = int(raw.get("agreements", 0))
         total_surplus = float(raw.get("total_surplus", 0.0))
-        if matches <= 0:
-            continue
         entries.append(
             {
                 "username": str(raw.get("username", "")),
@@ -739,20 +750,22 @@ async def submit_strategy(payload: StrategyRequest, request: Request) -> Submiss
         if defaults_added or entry:
             await _save_strategies(strategies)
 
-    opponents: List[Dict[str, Any]] = []
-    if not registered:
-        seed_names = {"Emaad", "Alex"}
-        opponents = [
-            candidate
-            for candidate in strategies
-            if candidate.get("role") != role and candidate.get("username") in seed_names
-        ]
-    else:
-        opponents = [candidate for candidate in strategies if candidate.get("role") != role]
-        opponent = random.choice(opponents) if opponents else None
-        opponents = [opponent] if opponent else []
-
     leaderboard_snapshot = await _get_leaderboard()
+    top_usernames = {
+        entry.get("username")
+        for entry in leaderboard_snapshot
+        if isinstance(entry, dict) and isinstance(entry.get("username"), str)
+    }
+    if username:
+        top_usernames.discard(username)
+    opponent_role = "seller" if role == "buyer" else "buyer"
+    opponents = [
+        candidate
+        for candidate in strategies
+        if candidate.get("role") == opponent_role
+        and candidate.get("username") in top_usernames
+        and candidate.get("registered")
+    ]
     user_total_surplus = await _get_user_total_surplus(username) if username else None
 
     if not opponents:
