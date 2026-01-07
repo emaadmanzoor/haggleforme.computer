@@ -48,8 +48,17 @@ type SubmissionResponse = {
   message?: string;
 };
 
+type RepoStatus = {
+  updatedAt: string;
+  commitMessage: string;
+  commitAuthor: string;
+};
+
 const AUTH_TOKEN_KEY = "negotiationAuthToken";
 const AUTH_USER_KEY = "negotiationAuthUser";
+const REPO_URL = "https://github.com/emaadmanzoor/haggleforme.computer";
+const REPO_COMMITS_URL =
+  "https://api.github.com/repos/emaadmanzoor/haggleforme.computer/commits?per_page=1";
 
 const API_BASE = (() => {
   const explicit =
@@ -81,6 +90,10 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   maximumFractionDigits: 0,
+});
+const repoDateFormatter = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
 });
 
 const formatCurrency = (value?: number | null) => {
@@ -152,6 +165,10 @@ function App() {
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [tournamentTotal, setTournamentTotal] = useState<number>(0);
   const [tournamentCompleted, setTournamentCompleted] = useState<number>(0);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareLoading, setShareLoading] = useState<boolean>(false);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const [repoStatus, setRepoStatus] = useState<RepoStatus | null>(null);
   const [strategiesOpen, setStrategiesOpen] = useState<boolean>(false);
   const [strategiesLoading, setStrategiesLoading] = useState<boolean>(false);
   const [strategiesError, setStrategiesError] = useState<string | null>(null);
@@ -195,6 +212,75 @@ function App() {
     setAuthError(null);
     resetAuthForm();
     setAuthMode(mode);
+  };
+
+  const copyToClipboard = async (text: string) => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.top = "0";
+    textarea.style.left = "0";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textarea);
+  };
+
+  const createShareLink = async (
+    entryId: string,
+    options: { copyToClipboard?: boolean } = {},
+  ) => {
+    if (!entryId || shareLoading) {
+      return null;
+    }
+    setShareLoading(true);
+    setShareError(null);
+    try {
+      const response = await fetch(apiUrl("/api/share"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry_id: entryId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const detail = typeof payload.detail === "string" ? payload.detail : "Share failed.";
+        throw new Error(detail);
+      }
+      const shareId = payload.share_id as string;
+      const url = `${window.location.origin}?share=${shareId}`;
+      setShareUrl(url);
+      if (options.copyToClipboard) {
+        await copyToClipboard(url);
+      }
+      return url;
+    } catch (error) {
+      setShareError((error as Error).message);
+      return null;
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  const handleShareLinkClick = async () => {
+    if (!result || shareLoading) {
+      return;
+    }
+    setShareError(null);
+    try {
+      if (!shareUrl) {
+        await createShareLink(result.entry_id, { copyToClipboard: true });
+        return;
+      }
+      await copyToClipboard(shareUrl);
+    } catch (error) {
+      setShareError("Unable to copy share link.");
+    }
   };
 
   const loadUserStrategies = async () => {
@@ -264,6 +350,91 @@ function App() {
   }, [authReady]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const loadRepoStatus = async () => {
+      try {
+        const response = await fetch(REPO_COMMITS_URL, {
+          headers: { Accept: "application/vnd.github+json" },
+        });
+        if (!response.ok) {
+          return;
+        }
+        const payload = await response.json().catch(() => null);
+        const commit = Array.isArray(payload) ? payload[0] : null;
+        const message =
+          typeof commit?.commit?.message === "string"
+            ? commit.commit.message.split("\n")[0]
+            : null;
+        const author =
+          typeof commit?.commit?.author?.name === "string"
+            ? commit.commit.author.name
+            : typeof commit?.commit?.committer?.name === "string"
+              ? commit.commit.committer.name
+              : typeof commit?.author?.login === "string"
+                ? commit.author.login
+                : null;
+        const updatedAt =
+          typeof commit?.commit?.author?.date === "string"
+            ? commit.commit.author.date
+            : typeof commit?.commit?.committer?.date === "string"
+              ? commit.commit.committer.date
+              : null;
+        if (!message || !author || !updatedAt) {
+          return;
+        }
+        setRepoStatus({
+          commitMessage: message,
+          commitAuthor: author,
+          updatedAt,
+        });
+      } catch (error) {
+        console.warn("Unable to load repository status", error);
+      }
+    };
+
+    loadRepoStatus();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const shareId = params.get("share");
+    if (!shareId) {
+      return;
+    }
+    const loadShare = async () => {
+      try {
+        const response = await fetch(apiUrl(`/api/share/${shareId}`));
+        if (!response.ok) {
+          return;
+        }
+        const payload = await response.json().catch(() => ({}));
+        setResult(payload as SubmissionResponse);
+        if (payload.role) {
+          setRole(payload.role);
+        }
+        setResultOpen(true);
+        setShareUrl(`${window.location.origin}?share=${shareId}`);
+        setShareError(null);
+      } catch (err) {
+        console.warn("Unable to load shared result", err);
+      }
+    };
+    loadShare();
+  }, []);
+
+  useEffect(() => {
+    if (!resultOpen || !result || shareUrl || shareLoading || shareError) {
+      return;
+    }
+    createShareLink(result.entry_id);
+  }, [resultOpen, result, shareUrl, shareLoading, shareError]);
+
+  useEffect(() => {
     if (!submissionId) {
       return;
     }
@@ -288,6 +459,8 @@ function App() {
         if (payload.status === "matched") {
           setResult(payload as SubmissionResponse);
           setResultOpen(true);
+      setShareUrl(null);
+      setShareError(null);
           if (Array.isArray(payload.leaderboard)) {
             setLeaderboard(normalizeLeaderboard(payload.leaderboard));
           }
@@ -346,6 +519,8 @@ function App() {
     setSubmissionId(null);
     setTournamentCompleted(0);
     setTournamentTotal(0);
+    setShareUrl(null);
+    setShareError(null);
 
     let keepSubmitting = false;
 
@@ -469,7 +644,7 @@ function App() {
       ? `Running tournaments ${currentTournament} / ${tournamentTotal}…`
       : "Running tournaments…"
     : "Submit";
-  const roleHint = role === "buyer" ? "buyer" : "seller";
+  const roleHint = (result?.role ?? role) === "buyer" ? "buyer" : "seller";
   const matches = useMemo<MatchResult[]>(() => {
     if (!result) {
       return [];
@@ -509,11 +684,42 @@ function App() {
       ? buyerPrompt || "Loading buyer system prompt…"
       : sellerPrompt || "Loading seller system prompt…";
 
+  const repoUpdatedLabel = useMemo(() => {
+    if (!repoStatus?.updatedAt) {
+      return "Loading…";
+    }
+    const updated = new Date(repoStatus.updatedAt);
+    if (Number.isNaN(updated.valueOf())) {
+      return "Unavailable";
+    }
+    return repoDateFormatter.format(updated);
+  }, [repoStatus?.updatedAt]);
+
+  const repoCommitMessageLabel = useMemo(() => {
+    if (!repoStatus) {
+      return "Loading…";
+    }
+    return repoStatus.commitMessage;
+  }, [repoStatus]);
+
+  const repoCommitAuthorLabel = useMemo(() => {
+    if (!repoStatus) {
+      return "Loading…";
+    }
+    return repoStatus.commitAuthor;
+  }, [repoStatus]);
+
+  const shareUrlLabel = useMemo(() => {
+    if (!shareUrl) {
+      return null;
+    }
+    return shareUrl.replace(/^https?:\/\//, "");
+  }, [shareUrl]);
 
   return (
     <div className="app-shell">
       <a
-        href="https://github.com/emaadmanzoor/haggleforme.computer"
+        href={REPO_URL}
         className="github-corner"
         aria-label="View source on GitHub"
       >
@@ -531,6 +737,15 @@ function App() {
           />
         </svg>
       </a>
+      <div className="repo-footer">
+        <span className="repo-footer-line">
+          Latest commit:{" "}
+          <a className="repo-footer-link" href={REPO_URL}>
+            {repoCommitMessageLabel}
+          </a>{" "}
+          by {repoCommitAuthorLabel} [{repoUpdatedLabel}]
+        </span>
+      </div>
       <div className="terminal-window">
         <header className="terminal-header">
           <div className="header-inner">
@@ -779,14 +994,47 @@ function App() {
                   <span className="result-label">Total surplus</span>
                   <strong>{totalSurplus !== null ? formatCurrency(totalSurplus) : "N/A"}</strong>
                 </div>
-                <button
-                  type="button"
-                  className="text-button prompt-close"
-                  onClick={() => setResultOpen(false)}
-                >
-                  Close
-                </button>
+                <div className="result-actions">
+                  <span className="share-link-group">
+                    <span className="share-link-label">Share: </span>
+                    <a
+                      className={`share-link${shareLoading ? " is-loading" : ""}`}
+                      href={shareUrl ?? "#"}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        handleShareLinkClick();
+                      }}
+                      aria-disabled={shareLoading}
+                      aria-label={shareUrl ? "Copy share link" : "Create share link"}
+                      title={shareUrl ? "Copy share link" : "Create share link"}
+                    >
+                      <span className="share-link-url">
+                        {shareUrlLabel ?? (shareLoading ? "Creating…" : "Create link")}
+                      </span>
+                      <span className="share-link-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" role="presentation">
+                          <path
+                            d="M16 1H6a2 2 0 0 0-2 2v12h2V3h10V1zm3 4H10a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H10V7h9v14z"
+                            fill="currentColor"
+                          />
+                        </svg>
+                      </span>
+                    </a>
+                  </span>
+                  <button
+                    type="button"
+                    className="text-button prompt-close"
+                    onClick={() => setResultOpen(false)}
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
+              {shareError && (
+                <div className="auth-error" role="alert" aria-live="polite">
+                  {shareError}
+                </div>
+              )}
               <div className="result-divider" />
               {result.status === "queued" && (
                 <div className="terminal-message">

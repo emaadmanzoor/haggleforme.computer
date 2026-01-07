@@ -93,6 +93,7 @@ LEADERBOARD_PATH = Path(__file__).resolve().parent / "leaderboard.json"
 USERS_PATH = Path(__file__).resolve().parent / "users.json"
 STRATEGIES_PATH = Path(__file__).resolve().parent / "strategies.json"
 MATCHES_PATH = Path(__file__).resolve().parent / "matches.json"
+SHARES_PATH = Path(__file__).resolve().parent / "shares.json"
 
 USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{3,32}$")
 _PASSWORD_ITERATIONS = 120_000
@@ -101,6 +102,7 @@ _USERS_LOCK = asyncio.Lock()
 _LEADERBOARD_LOCK = asyncio.Lock()
 _STRATEGIES_LOCK = asyncio.Lock()
 _MATCHES_LOCK = asyncio.Lock()
+_SHARES_LOCK = asyncio.Lock()
 _SUBMISSIONS_LOCK = asyncio.Lock()
 _SUBMISSIONS: Dict[str, Dict[str, Any]] = {}
 
@@ -429,6 +431,34 @@ async def _save_matches(records: List[Dict[str, Any]]) -> None:
     await asyncio.to_thread(MATCHES_PATH.write_text, serialized)
 
 
+async def _load_shares() -> Dict[str, Dict[str, Any]]:
+    if not SHARES_PATH.exists():
+        return {}
+    data = await asyncio.to_thread(SHARES_PATH.read_text)
+    try:
+        parsed = json.loads(data)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    cleaned: Dict[str, Dict[str, Any]] = {}
+    for key, value in parsed.items():
+        if not isinstance(key, str) or not isinstance(value, dict):
+            continue
+        entry_id = value.get("entry_id")
+        if isinstance(entry_id, str) and entry_id:
+            cleaned[key] = {
+                "entry_id": entry_id,
+                "created_at": int(value.get("created_at", 0)),
+            }
+    return cleaned
+
+
+async def _save_shares(records: Dict[str, Dict[str, Any]]) -> None:
+    serialized = json.dumps(records, indent=2)
+    await asyncio.to_thread(SHARES_PATH.write_text, serialized)
+
+
 def _derive_password(secret: bytes, salt: bytes) -> str:
     digest = hashlib.pbkdf2_hmac("sha256", secret, salt, _PASSWORD_ITERATIONS)
     return base64.b64encode(digest).decode("ascii")
@@ -616,6 +646,14 @@ class StrategySnapshot(BaseModel):
     seller_strategy: Optional[str] = None
 
 
+class ShareRequest(BaseModel):
+    entry_id: str = Field(..., min_length=1, max_length=64)
+
+
+class ShareResponse(BaseModel):
+    share_id: str
+
+
 class MatchRound(BaseModel):
     round: int
     speaker: str
@@ -753,6 +791,26 @@ async def get_my_strategies(request: Request) -> StrategySnapshot:
     return StrategySnapshot(buyer_strategy=buyer_strategy, seller_strategy=seller_strategy)
 
 
+@app.post("/api/share", response_model=ShareResponse)
+async def create_share(payload: ShareRequest) -> ShareResponse:
+    entry_id = payload.entry_id.strip()
+    if not entry_id:
+        raise HTTPException(status_code=400, detail="Missing entry id.")
+    async with _MATCHES_LOCK:
+        matches = await _load_matches()
+    if not any(
+        match.get("buyer_entry") == entry_id or match.get("seller_entry") == entry_id
+        for match in matches
+    ):
+        raise HTTPException(status_code=404, detail="No results found for submission.")
+    share_id = secrets.token_urlsafe(10)
+    async with _SHARES_LOCK:
+        shares = await _load_shares()
+        shares[share_id] = {"entry_id": entry_id, "created_at": int(time.time())}
+        await _save_shares(shares)
+    return ShareResponse(share_id=share_id)
+
+
 
 async def _run_submission(
     *,
@@ -866,6 +924,61 @@ async def _run_submission(
         record = _SUBMISSIONS.get(entry_id)
         if record:
             record["status"] = "matched"
+
+
+def _build_results_from_matches(entry_id: str, matches: List[Dict[str, Any]]) -> SubmissionResponse:
+    relevant = [
+        match
+        for match in matches
+        if match.get("buyer_entry") == entry_id or match.get("seller_entry") == entry_id
+    ]
+    if not relevant:
+        raise HTTPException(status_code=404, detail="No matches found for submission.")
+    role = "buyer" if relevant[0].get("buyer_entry") == entry_id else "seller"
+    total_surplus = 0.0
+    results: List[MatchResult] = []
+    for match in relevant:
+        match_role = "buyer" if match.get("buyer_entry") == entry_id else "seller"
+        price = match.get("price")
+        agreement = bool(match.get("agreement"))
+        buyer_surplus = 0.0
+        seller_surplus = 0.0
+        if agreement and price is not None:
+            buyer_surplus = 22000 - float(price)
+            seller_surplus = float(price) - 18000
+        user_surplus = buyer_surplus if match_role == "buyer" else seller_surplus
+        opponent_surplus = seller_surplus if match_role == "buyer" else buyer_surplus
+        if agreement:
+            total_surplus += user_surplus
+        opponent_label = (
+            match.get("seller_username")
+            if match_role == "buyer"
+            else match.get("buyer_username")
+        ) or "Anonymous"
+        transcript = [
+            MatchRound(round=r["round"], speaker=r["speaker"], text=r["text"])
+            for r in match.get("transcript", [])
+            if isinstance(r, dict)
+        ]
+        results.append(
+            MatchResult(
+                opponent_role="seller" if match_role == "buyer" else "buyer",
+                opponent_label=opponent_label,
+                agreement=agreement,
+                price=price,
+                rounds=match.get("rounds"),
+                surplus=user_surplus,
+                opponent_surplus=opponent_surplus,
+                transcript=transcript,
+            )
+        )
+    return SubmissionResponse(
+        status="matched",
+        entry_id=entry_id,
+        role=role,
+        total_surplus=total_surplus,
+        matches=results,
+    )
 
 
 @app.post("/api/submit", response_model=SubmissionResponse)
@@ -1001,6 +1114,21 @@ async def get_submission_status(entry_id: str) -> SubmissionResponse:
             completed_tournaments=record.get("completed_tournaments"),
             message=record.get("message"),
         )
+
+
+@app.get("/api/share/{share_id}", response_model=SubmissionResponse)
+async def get_share(share_id: str) -> SubmissionResponse:
+    async with _SHARES_LOCK:
+        shares = await _load_shares()
+    record = shares.get(share_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Share not found.")
+    entry_id = record.get("entry_id")
+    if not entry_id:
+        raise HTTPException(status_code=404, detail="Share not found.")
+    async with _MATCHES_LOCK:
+        matches = await _load_matches()
+    return _build_results_from_matches(entry_id, matches)
 
 @app.get("/api/leaderboard")
 async def get_leaderboard():
