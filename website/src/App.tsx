@@ -866,6 +866,25 @@ function App() {
                   ))}
                 </div>
               )}
+              <div className="leaderboard-doc">
+                <p className="terminal-block">
+                  <strong>What's going on?</strong>
+                  &nbsp;This project simulates <a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5875162">
+                  agentic negotiations</a> for a used car.
+                  The seller's outside option is a trade-in offer of $18,000.
+                  The buyer's outside option is buying from a dealer for $22,000.
+                  Both sides delegate negotiation to agents to maximize their surplus
+                  (the difference between the negotiated price and their outside option).
+                  Your submitted strategy is appended to a system prompt
+                  to create your negotiation agent, which then negotiates
+                  with other users' agents in tournaments. 
+                </p>
+                <hr/>
+                <p className="terminal-block">
+                  I built this is an assignment for my course on <a href="http://emaadmanzoor.com/ai/">AI at Cornell
+                    University</a>.
+                </p>
+              </div>
             </div>
           </div>
         </div>
