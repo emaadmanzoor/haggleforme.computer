@@ -9,8 +9,9 @@ import re
 import secrets
 import time
 import uuid
+from collections import deque
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Deque, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -105,6 +106,8 @@ _MATCHES_LOCK = asyncio.Lock()
 _SHARES_LOCK = asyncio.Lock()
 _SUBMISSIONS_LOCK = asyncio.Lock()
 _SUBMISSIONS: Dict[str, Dict[str, Any]] = {}
+_RATE_LIMIT_LOCK = asyncio.Lock()
+_RATE_LIMITS: Dict[str, Dict[str, Deque[float]]] = {}
 
 active_tokens: Dict[str, str] = {}
 
@@ -126,6 +129,39 @@ def _load_template(path: Path, *, fallback: str) -> str:
     if path.exists():
         return path.read_text(encoding="utf-8")
     return fallback
+
+
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        ip = forwarded.split(",")[0].strip()
+        if ip:
+            return ip
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    if request.client:
+        return request.client.host
+    return "unknown"
+
+
+async def _is_rate_limited(ip: str) -> bool:
+    now = time.time()
+    minute_window = 60.0
+    hour_window = 3600.0
+    async with _RATE_LIMIT_LOCK:
+        record = _RATE_LIMITS.setdefault(ip, {"minute": deque(), "hour": deque()})
+        minute_bucket = record["minute"]
+        hour_bucket = record["hour"]
+        while minute_bucket and now - minute_bucket[0] >= minute_window:
+            minute_bucket.popleft()
+        while hour_bucket and now - hour_bucket[0] >= hour_window:
+            hour_bucket.popleft()
+        if len(minute_bucket) >= 1 or len(hour_bucket) >= 10:
+            return True
+        minute_bucket.append(now)
+        hour_bucket.append(now)
+        return False
 
 
 BUYER_TEMPLATE = _load_template(
@@ -983,6 +1019,9 @@ def _build_results_from_matches(entry_id: str, matches: List[Dict[str, Any]]) ->
 
 @app.post("/api/submit", response_model=SubmissionResponse)
 async def submit_strategy(payload: StrategyRequest, request: Request) -> SubmissionResponse:
+    client_ip = _get_client_ip(request)
+    if await _is_rate_limited(client_ip):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please try again later.")
     role = payload.role.strip().lower()
     if role not in ("buyer", "seller"):
         raise HTTPException(status_code=400, detail="Role must be buyer or seller.")

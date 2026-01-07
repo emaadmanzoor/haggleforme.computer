@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
 type Role = "buyer" | "seller";
@@ -169,6 +169,8 @@ function App() {
   const [shareLoading, setShareLoading] = useState<boolean>(false);
   const [shareError, setShareError] = useState<string | null>(null);
   const [repoStatus, setRepoStatus] = useState<RepoStatus | null>(null);
+  const [rateLimitNotice, setRateLimitNotice] = useState<string | null>(null);
+  const rateLimitTimerRef = useRef<number | null>(null);
   const [strategiesOpen, setStrategiesOpen] = useState<boolean>(false);
   const [strategiesLoading, setStrategiesLoading] = useState<boolean>(false);
   const [strategiesError, setStrategiesError] = useState<string | null>(null);
@@ -398,6 +400,14 @@ function App() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (rateLimitTimerRef.current) {
+        window.clearTimeout(rateLimitTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -542,6 +552,10 @@ function App() {
         resetAuthForm();
         setAuthMode("signin");
         setAuthError("Your session expired. Please sign in again.");
+        return;
+      }
+      if (response.status === 429) {
+        showRateLimitNotice("You're doing that too often, please wait and try again!");
         return;
       }
       if (!response.ok) {
@@ -716,8 +730,23 @@ function App() {
     return shareUrl.replace(/^https?:\/\//, "");
   }, [shareUrl]);
 
+  const showRateLimitNotice = (message: string) => {
+    setRateLimitNotice(message);
+    if (rateLimitTimerRef.current) {
+      window.clearTimeout(rateLimitTimerRef.current);
+    }
+    rateLimitTimerRef.current = window.setTimeout(() => {
+      setRateLimitNotice(null);
+    }, 3000);
+  };
+
   return (
     <div className="app-shell">
+      {rateLimitNotice && (
+        <div className="rate-limit-toast" role="status" aria-live="polite">
+          {rateLimitNotice}
+        </div>
+      )}
       <a
         href={REPO_URL}
         className="github-corner"
