@@ -766,15 +766,6 @@ function App() {
           />
         </svg>
       </a>
-      <div className="repo-footer">
-        <span className="repo-footer-line">
-          Latest commit:{" "}
-          <a className="repo-footer-link" href={REPO_URL}>
-            {repoCommitMessageLabel}
-          </a>{" "}
-          by {repoCommitAuthorLabel} [{repoUpdatedLabel}]
-        </span>
-      </div>
       <div className="terminal-window">
         <header className="terminal-header">
           <div className="header-inner">
@@ -910,13 +901,22 @@ function App() {
                 </p>
                 <hr/>
                 <p className="terminal-block">
-                  I built this is an assignment for my course on <a href="http://emaadmanzoor.com/ai/">AI at Cornell
-                    University</a>.
+                  If you like this, take my course on <a href="http://emaadmanzoor.com/ai/">AI at Cornell</a>!
                 </p>
               </div>
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="repo-footer">
+        <span className="repo-footer-line">
+          Latest commit:{" "}
+          <a className="repo-footer-link" href={REPO_URL}>
+            {repoCommitMessageLabel}
+          </a>{" "}
+          by {repoCommitAuthorLabel} [{repoUpdatedLabel}]
+        </span>
       </div>
 
       {strategiesOpen && (

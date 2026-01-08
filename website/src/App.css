@@ -52,3 +52,12 @@
 .text-button:focus{outline:none;box-shadow:none}
 
 .rate-limit-toast{position:fixed;bottom:1.5rem;right:1.5rem;z-index:30;background:#0f172a;color:#ffffff;padding:.6rem .9rem;border:1px solid #0f172a;font-size:.85rem;max-width:260px}
+
+@media (max-width: 900px){
+  .app-shell{flex-direction:column;align-items:stretch;justify-content:flex-start}
+  .header-inner{flex-direction:column;align-items:flex-start}
+  .auth-controls{width:100%;justify-content:flex-start}
+  .terminal-column{padding-right:0}
+  .terminal-column.narrow{flex:1 1 auto;max-width:none;min-width:0;border-left:none;padding-left:0;padding-right:0;overflow:visible}
+  .repo-footer{position:static;bottom:auto;left:auto;margin-top:1rem;max-width:100%}
+}
