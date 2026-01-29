@@ -93,7 +93,6 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
 });
 const repoDateFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
-  timeStyle: "short",
 });
 
 const formatCurrency = (value?: number | null) => {
@@ -769,8 +768,8 @@ function App() {
       <div className="terminal-window">
         <header className="terminal-header">
           <div className="header-inner">
-            <pre><span className="header-title">{HEADER_TEXT}<span className="header-dot" aria-hidden="true" /></span></pre>
-            <div className="auth-controls">
+            <pre className="header-title">{HEADER_TEXT}</pre>
+            <div className={`auth-controls ${isSignedIn ? "signed-in" : "guest"}`}>
               {isSignedIn ? (
                 <>
                   <span className="auth-user">

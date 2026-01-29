@@ -42,7 +42,7 @@
 .text-button.primary{border-color:#0f172a;color:#0f172a}
 .text-button:disabled{opacity:1;color:#0f172a;border-color:#0f172a;cursor:not-allowed}
 
-.github-corner{position:fixed;top:0;right:0;z-index:20;color:#ffffff}
+.github-corner{position:fixed;top:0;right:0;z-index:4;color:#ffffff}
 .repo-footer{position:fixed;bottom:1rem;left:1rem;z-index:5;max-width:min(520px,90vw);font-size:.68rem;line-height:1.4;color:#475569;display:flex;flex-direction:column;gap:.15rem}
 .repo-footer-link{color:#475569;text-decoration:underline;text-decoration-style:solid}
 .repo-footer-link:visited,.repo-footer-link:active{color:#475569}.repo-footer-link:hover{color:#0b1220}
@@ -53,11 +53,21 @@
 
 .rate-limit-toast{position:fixed;bottom:1.5rem;right:1.5rem;z-index:30;background:#0f172a;color:#ffffff;padding:.6rem .9rem;border:1px solid #0f172a;font-size:.85rem;max-width:260px}
 
+.terminal-header pre.header-title{flex:0 0 auto;display:inline-block}
+.terminal-header pre.header-title::after{content:"";display:inline-block;width:.35em;height:.35em;border:1.5px solid currentColor;border-radius:50%;margin-left:.18em;vertical-align:baseline}
+
 @media (max-width: 900px){
-  .app-shell{flex-direction:column;align-items:stretch;justify-content:flex-start}
+  .app-shell{flex-direction:column;align-items:stretch;justify-content:flex-start;padding:0}
+  .terminal-window{width:100%;max-width:none;box-shadow:none}
+  .terminal-header{padding-left:1.25rem;padding-right:1.25rem}
+  .terminal-content{padding-left:1.25rem;padding-right:1.25rem}
   .header-inner{flex-direction:column;align-items:flex-start}
-  .auth-controls{width:100%;justify-content:flex-start}
+  .auth-controls{width:100%;justify-content:flex-start;padding:0}
+  .auth-controls.guest{flex-wrap:nowrap;gap:.4rem}
+  .auth-controls.guest .auth-user{font-size:.65rem;margin-right:0;white-space:nowrap}
+  .auth-controls.guest .auth-button{font-size:.62rem;padding:.35rem .55rem;letter-spacing:.06em;white-space:nowrap}
   .terminal-column{padding-right:0}
-  .terminal-column.narrow{flex:1 1 auto;max-width:none;min-width:0;border-left:none;padding-left:0;padding-right:0;overflow:visible}
-  .repo-footer{position:static;bottom:auto;left:auto;margin-top:1rem;max-width:100%}
+  .terminal-column.narrow{flex:1 1 auto;max-width:none;min-width:0;border-left:none;padding-left:0;padding-right:0;padding-top:1rem;padding-bottom:1rem;overflow:visible}
+  .terminal-column.narrow .leaderboard-doc{margin-top:1.75rem}
+  .repo-footer{position:static;bottom:auto;left:auto;margin-top:1rem;max-width:100%;text-align:center;align-items:center}
 }
