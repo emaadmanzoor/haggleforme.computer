@@ -1071,20 +1071,28 @@ async def submit_strategy(payload: StrategyRequest, request: Request) -> Submiss
             await _save_strategies(strategies)
 
     leaderboard_snapshot = await _get_leaderboard()
-    top_usernames = {
-        entry.get("username")
-        for entry in leaderboard_snapshot
-        if isinstance(entry, dict) and isinstance(entry.get("username"), str)
-    }
-    if username:
-        top_usernames.discard(username)
     opponent_role = "seller" if role == "buyer" else "buyer"
+    opponent_usernames = {"Emaad", "Alex"}
+    if username:
+        opponent_usernames.discard(username)
+    opponents_by_username: Dict[str, Dict[str, Any]] = {}
+    for candidate in strategies:
+        candidate_username = candidate.get("username")
+        if (
+            candidate.get("role") != opponent_role
+            or candidate_username not in opponent_usernames
+            or not candidate.get("registered")
+        ):
+            continue
+        existing = opponents_by_username.get(candidate_username)
+        if existing is None or int(candidate.get("created_at", 0)) > int(
+            existing.get("created_at", 0)
+        ):
+            opponents_by_username[candidate_username] = candidate
     opponents = [
-        candidate
-        for candidate in strategies
-        if candidate.get("role") == opponent_role
-        and candidate.get("username") in top_usernames
-        and candidate.get("registered")
+        opponents_by_username[name]
+        for name in ("Emaad", "Alex")
+        if name in opponents_by_username
     ]
     user_total_surplus = await _get_user_total_surplus(username) if username else None
 
