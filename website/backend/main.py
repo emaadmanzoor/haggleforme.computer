@@ -149,6 +149,8 @@ async def _is_rate_limited(ip: str) -> bool:
     now = time.time()
     minute_window = 60.0
     hour_window = 3600.0
+    minute_limit = 9999
+    hour_limit = 9999
     async with _RATE_LIMIT_LOCK:
         record = _RATE_LIMITS.setdefault(ip, {"minute": deque(), "hour": deque()})
         minute_bucket = record["minute"]
@@ -157,7 +159,7 @@ async def _is_rate_limited(ip: str) -> bool:
             minute_bucket.popleft()
         while hour_bucket and now - hour_bucket[0] >= hour_window:
             hour_bucket.popleft()
-        if len(minute_bucket) >= 1 or len(hour_bucket) >= 10:
+        if len(minute_bucket) >= minute_limit or len(hour_bucket) >= hour_limit:
             return True
         minute_bucket.append(now)
         hour_bucket.append(now)
